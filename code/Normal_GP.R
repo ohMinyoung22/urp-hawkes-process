@@ -317,14 +317,14 @@ model {
   // Priors
   // ===========================================================================
   
-  lmu_mean ~ normal(-6, 2);
-  sigma_mu ~ normal(0, 0.5);
-  to_vector(z_mu) ~ std_normal();
+  // Informative
+  lmu_mean ~ normal(-2.3, 0.5);
+  sigma_mu ~ normal(0, 0.3);
+  leta ~ normal(log(3.5), 0.35);
+  lphi ~ normal(log(3.5), 0.35);
   
+  to_vector(z_mu) ~ std_normal();
   to_vector(a_star) ~ normal(0, a_sd);
-
-  leta ~ normal(6, 1.5); // set the parameters manually
-  lphi ~ normal(6, 1.5); // set the parameters manually
 
   // ===========================================================================
   // Likelihood
@@ -363,7 +363,39 @@ generated quantities {
 # =============================================================================
 # Time grid for time-varying mu_k(t)
 # =============================================================================
-T_end = 86400
+setwd("C:/Users/nexen/Desktop/Hawkes_Process/urp-hawkes-process/data")
+sim_dat1 = read.csv("simulated_events_1000.csv")
+t_num = sim_dat1$time
+m = sim_dat1$mark
+K = 3
+
+alpha_true <- matrix(
+  c(
+    0.57, 0.00, -0.26,
+    0.00, 0.55, 0.26,
+    -0.14, 0.00, 0.73
+  ),
+  nrow = 3,
+  byrow = TRUE
+)
+
+gamma_true <- matrix(
+  c(
+    0.00, 0.00, 0.26,
+    0.00, 0.00, 0.00,
+    0.14, 0.00, 0.00
+  ),
+  nrow = 3,
+  byrow = TRUE
+)
+
+eta_true <- c(5, 3, 2)
+phi_true <- c(2, 5, 3)
+ell_mu_true <- 30
+sigma_mu_true <- c(0.30, 0.30, 0.30)
+mean_mu_true <- c(0.2, 0.1, 0.1)
+
+T_end = 1000
 t_num <- as.numeric(t_num)
 T_end <- as.numeric(T_end)
 
@@ -458,41 +490,7 @@ storage.mode(idx_quad) <- "integer"
 file_MHPWI = write_stan_file(MHPWI_model_code)
 MHPWI_model = cmdstan_model(file_MHPWI)
 
-sim_dat1 = read.csv("simulated_events.csv")
-t_num = sim_dat1$time
-m = sim_dat1$mark
-K = 3
 
-alpha_true <- matrix(
-  c(
-    0.57, 0.00, 0.00,
-    0.00, 0.55, 0.26,
-    0.00, 0.00, 0.73
-  ),
-  nrow = 3,
-  byrow = TRUE
-)
-
-gamma_true <- matrix(
-  c(
-    0.00, 0.00, 0.26,
-    0.00, 0.00, 0.00,
-    0.14, 0.00, 0.00
-  ),
-  nrow = 3,
-  byrow = TRUE
-)
-
-eta_true <- c(1342.8, 251.4, 149.4)
-phi_true <- c(158.4, 1509.0, 164.4)
-ell_mu_true <- 10800
-sigma_mu_true <- c(0.30, 0.30, 0.30)
-
-stopifnot(
-  ell_mu_true > max(eta_true),
-  ell_mu_true > max(phi_true),
-  T_end >= 3 * ell_mu_true
-)
 
 ## construct Stan data ----
 stan_data <- list(
@@ -503,7 +501,7 @@ stan_data <- list(
   m = as.integer(m),
   
   T_end = T_end,
-  a_sd = 0.5,
+  a_sd = 1,
   
   size_s_mu = as.integer(size_s_mu),
   s_mu = s_mu,
@@ -519,87 +517,125 @@ summary(diff(stan_data$s_mu))
 stan_data$ell_mu
 is.unsorted(s_mu)
 
-
-dir.create("stan_outputs", showWarnings = FALSE)
-
-saveRDS(fit_400, "fit_400.RDS")
-
+setwd("C:/Users/nexen/Desktop/Hawkes_Process/urp-hawkes-process")
 ## fit the model ---- 
-fit_6000 <- MHPWI_model$sample(
+fit <- MHPWI_model$sample(
   data = stan_data,
   chains = 4,
   parallel_chains = 4,
-  iter_warmup = 3000,
-  iter_sampling = 3000,
-  adapt_delta = 0.9,
+  iter_warmup = 2000,
+  iter_sampling = 2000,
+  adapt_delta = 0.95,
   seed = 123,
   refresh = 10,
-  output_dir = "stan_outputs"
+  output_dir = "artifact"
 )
 
+### Sampler diagnostic
+fit$diagnostic_summary()
 
-diag <- fit_2000$diagnostic_summary()
-summary_2000 <- fit_2000$summary()
-summary_6000 <- fit_6000$summary()
-fit_6000$diagnostic_summary()
 
-summary_6000 %>%
-  filter(str_detect(variable, "eta"))
+### summary
+summary <- fit_6000$summary(
+  posterior::default_summary_measures(),
+  posterior::default_convergence_measures(),
+  q2.5 = ~quantile(.x, 0.025),
+  q97.5 = ~quantile(.x, 0.975)
+)
+                            
+summary %>% filter(str_detect(variable, "a_star"))
+summary %>% filter(str_detect(variable, "eta"))
+summary %>% filter(str_detect(variable, "phi"))
+summary %>% filter(str_detect(variable, "lmu_mean"))
+summary %>% filter(str_detect(variable, "sigma_mu"))
 
-draws <- posterior::as_draws_df(
-  fit_6000$draws(
-    variables = c(
-      "alpha[1,1]",
-      "a_star[1,1]",
-      "leta[1]",
-      "eta[1]",
-      "sigma_mu[1]"
+### trace plot
+
+
+### coverage plot
+library(posterior)
+library(dplyr)
+library(tibble)
+
+lmu_mean_true <-
+  log(mean_mu_true) - sigma_mu_true^2 / 2
+
+true_values <- c(
+  setNames(
+    as.vector(t(alpha_true)),
+    paste0(
+      "a_star[",
+      rep(1:3, each = 3),
+      ",",
+      rep(1:3, 3),
+      "]"
     )
+  ),
+  setNames(
+    sigma_mu_true,
+    paste0("sigma_mu[", 1:3, "]")
+  ),
+  
+  setNames(
+    eta_true,
+    paste0("eta[", 1:3, "]")
+  ),
+  
+  setNames(
+    phi_true,
+    paste0("phi[", 1:3, "]")
+  ),
+  
+  setNames(
+    lmu_mean_true,
+    paste0("lmu_mean[", 1:3, "]")
   )
 )
 
-cor(
-  draws[["alpha[1,1]"]],
-  draws[["leta[1]"]]
+library(posterior)
+library(dplyr)
+library(tidyr)
+
+draws_df <- fit$draws(
+  variables = names(true_values),
+  format = "draws_df"
 )
 
-cor(
-  draws[["alpha[1,1]"]],
-  draws[["sigma_mu[1]"]]
-)
-
-idx <- draws[["a_star[1,1]"]] > 0
-
-cor(
-  draws[["a_star[1,1]"]][idx],
-  draws[["leta[1]"]][idx]
-)
-a11 <- draws[["a_star[1,1]"]]
-idx <- a11 > 0
-
-c(
-  prob_excitation = mean(idx),
-  mean_alpha = mean(pmax(a11, 0)),
-  mean_given_excitation = mean(a11[idx]),
-  median_given_excitation = median(a11[idx])
-)
-jump11 <- draws[["alpha[1,1]"]] / draws[["eta[1]"]]
-
-quantile(
-  jump11,
-  c(0.05, 0.5, 0.95)
-)
-idx <- draws[["a_star[1,1]"]] > 0
-
-jump11_positive <-
-  draws[["a_star[1,1]"]][idx] /
-  draws[["eta[1]"]][idx]
-
-c(
-  mean = mean(jump11_positive),
-  median = median(jump11_positive),
-  quantile(
-    jump11_positive,
-    c(0.05, 0.5, 0.95)
+result <- draws_df %>%
+  as.data.frame() %>%
+  select(all_of(names(true_values))) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Parameter",
+    values_to = "draw"
+  ) %>%
+  group_by(Parameter) %>%
+  summarise(
+    `Mean estimate` = mean(draw),
+    ci_lower = quantile(draw, 0.025),
+    ci_upper = quantile(draw, 0.975),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    `True value` = true_values[Parameter],
+    `credible interval` = paste0(
+      "[",
+      round(ci_lower, 4),
+      ", ",
+      round(ci_upper, 4),
+      "]"
+    ),
+    coverage = (
+      `True value` >= ci_lower &
+        `True value` <= ci_upper
+    )
+  ) %>%
+  select(
+    Parameter,
+    `True value`,
+    `Mean estimate`,
+    `credible interval`,
+    coverage
   )
-)
+
+print(result, n = Inf)

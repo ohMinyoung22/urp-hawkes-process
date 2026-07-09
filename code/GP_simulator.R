@@ -5,17 +5,17 @@ gc()
 # 0. True parameters
 # ============================================================
 
-set.seed(1)
+set.seed(123)
 
-T_max <- 86400
+T_max <- 1000
 K <- 3
 
-mean_mu_true <- c(0.002, 0.0008, 0.0001)
+mean_mu_true <- c(0.2, 0.1, 0.1)
 sigma_mu_true <- c(0.30, 0.30, 0.30)
-ell_mu_true <- 10800
+ell_mu_true <- 30
 
-eta_true <- c(1342.8, 251.4, 149.4)
-phi_true <- c(158.4, 1509.0, 164.4)
+eta_true <- c(5, 3, 2)
+phi_true <- c(2, 5, 3)
 
 alpha_true <- matrix(
   c(
@@ -44,7 +44,7 @@ trpar_true <- list(
   phi = phi_true
 )
 
-cseg <- seq(0, T_max, by = 60)
+cseg <- seq(0, T_max, by = 1)
 
 
 # ============================================================
@@ -503,7 +503,7 @@ matplot(
   ylab = expression(mu[k](t)),
   main = "True GP baseline"
 )
-
+getwd()
 abline(h = mean_mu_true, lty = 2)
 
 qqplot(
@@ -520,6 +520,6 @@ par(mfrow = c(1, 1))
 
 write.csv(
   simulated_events,
-  file = "simulated_events.csv",
+  file = "simulated_events_1000.csv",
   row.names = FALSE
 )
