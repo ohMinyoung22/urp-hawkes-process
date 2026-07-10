@@ -195,7 +195,7 @@ data {
   real<lower=0> T_end;
 
   // Normal prior scale for a_star
-  real<lower=0> a_sd;
+  // real<lower=0> a_sd;
   
   // mu_k(t) 평가가 필요한 점들의 전체 시간 배열
   int<lower=2> size_s_mu;
@@ -210,6 +210,13 @@ data {
   array[N + 1, 8] int<lower=1, upper=size_s_mu> idx_quad;
   
   real<lower=0> ell_mu; // Length scale
+  
+  real<lower=0> tau0;
+  real<lower=0> slab_scale_effect; // s
+  real<lower=0> slab_df_effect; // nu
+  
+  real<lower=1> hs_df_local;
+  real<lower=1> hs_df_global;
 }
 
 transformed data {
@@ -259,20 +266,41 @@ parameters {
 
   // a_star > 0  -> excitation
   // a_star < 0  -> inhibition
-  matrix<lower=-1, upper=1>[K, K] a_star;
 
   vector[K] leta;
   vector[K] lphi;
+  
+  matrix[K, K] horseshoe_z_effect;
+  matrix<lower=0>[K, K] horseshoe_lambda;
+  real<lower=0> horseshoe_tau;
+  real<lower=0> horseshoe_c2;
 }
 
 
 transformed parameters {
+  matrix[K, K] a_star;
   // exp 씌워진 mu값
   matrix[K, size_s_mu] lmu_s;
   matrix[K, size_s_mu] mu_s;
-  
   vector<lower=0>[K] eta;
   vector<lower=0>[K] phi;
+  
+  for(l in 1:K){
+    for(k in 1:K){
+      real lambda2;
+      real tau2;
+      real lambda_tilde;
+      
+      lambda2 = square(horseshoe_lambda[l, k]);
+      tau2 = square(horseshoe_tau);
+      
+      lambda_tilde = sqrt(
+        horseshoe_c2 * lambda2 / (horseshoe_c2 + tau2 * lambda2)
+      );
+      
+      a_star[l,k] = horseshoe_tau * lambda_tilde * horseshoe_z_effect[l, k];
+    }
+  }
   
   for(k in 1 : K){
     lmu_s[k, 1] = 
@@ -296,6 +324,14 @@ transformed parameters {
 }
 
 model {
+  to_vector(horseshoe_z_effect) ~ std_normal();
+  to_vector(horseshoe_lambda) ~ student_t(hs_df_local, 0, 1);
+  horseshoe_tau ~ student_t(hs_df_global, 0, tau0);
+  
+  horseshoe_c2 ~ inv_gamma(
+    0.5 * slab_df_effect,
+    0.5 * slab_df_effect * square(slab_scale_effect)
+  );
 
   matrix[K, K] alpha;
   matrix[K, K] gamma;
@@ -324,7 +360,7 @@ model {
   lphi ~ normal(log(3.5), 0.35);
   
   to_vector(z_mu) ~ std_normal();
-  to_vector(a_star) ~ normal(0, a_sd);
+  //to_vector(a_star) ~ normal(0, a_sd);
 
   // ===========================================================================
   // Likelihood
@@ -337,8 +373,8 @@ model {
 }
 
 generated quantities {
-  matrix<lower=0, upper=1>[K, K] alpha;
-  matrix<lower=0, upper=1>[K, K] gamma;
+  matrix<lower=0>[K, K] alpha;
+  matrix<lower=0>[K, K] gamma;
   matrix[K, K] signed_effect;
 
   matrix<lower=0, upper=1>[K, K] is_excitation;
@@ -394,7 +430,7 @@ phi_true <- c(2, 5, 3)
 ell_mu_true <- 30
 sigma_mu_true <- c(0.30, 0.30, 0.30)
 mean_mu_true <- c(0.2, 0.1, 0.1)
-lmu_mean_true
+lmu_mean_true <- c(-1.65, -2.35, -2.35)
 
 T_end = 1000
 t_num <- as.numeric(t_num)
@@ -502,7 +538,6 @@ stan_data <- list(
   m = as.integer(m),
   
   T_end = T_end,
-  a_sd = 1,
   
   size_s_mu = as.integer(size_s_mu),
   s_mu = s_mu,
@@ -510,7 +545,15 @@ stan_data <- list(
   idx_event = idx_event,
   idx_quad = idx_quad,
   
-  ell_mu = ell_mu_true
+  ell_mu = ell_mu_true,
+  
+  
+  tau0 = 0.05,
+  slab_scale_effect = 1,
+  slab_df_effect = 4,
+  
+  hs_df_local = 4,
+  hs_df_global = 4
 )
 range(diff(stan_data$s_mu))
 min(diff(stan_data$s_mu))
@@ -538,19 +581,7 @@ fit$diagnostic_summary()
 saveRDS(fit, "fit_normalGP.RDS")
 fit$cmdstan_diagnose()
 
-### summary
-summary <- fit_6000$summary(
-  posterior::default_summary_measures(),
-  posterior::default_convergence_measures(),
-  q2.5 = ~quantile(.x, 0.025),
-  q97.5 = ~quantile(.x, 0.975)
-)
-                            
-summary %>% filter(str_detect(variable, "a_star"))
-summary %>% filter(str_detect(variable, "eta"))
-summary %>% filter(str_detect(variable, "phi"))
-summary %>% filter(str_detect(variable, "lmu_mean"))
-summary %>% filter(str_detect(variable, "sigma_mu"))
+summary <- fit$summary()
 
 ### trace plot
 library(cmdstanr)
@@ -568,7 +599,7 @@ vars <- as.vector(outer(
 draws <- fit$draws(variables = vars)
 
 # alpha_true가 3x3 matrix라고 가정
-true_vals <- as.vector(alpha_true[1:3])
+true_vals <- as.vector(alpha_true[1:3, 1:3])
 names(true_vals) <- vars
 
 # trace plot + true value 수평 점선
@@ -581,24 +612,24 @@ p <- mcmc_trace(draws, pars = vars) +
     inherit.aes = FALSE
   )
 
-p
+
 
 # eta[1], eta[2], eta[3] 이름 만들기
-vars <- sprintf("lmu_mean[%d]", 1:3)
+vars <- sprintf("phi[%d]", 1:3)
 
 # draws 추출
 draws <- fit$draws(variables = vars)
 
 # eta_true가 길이 3 벡터라고 가정
-true_vals <- lmu_mean_true[1:3]
+true_vals <- phi_true[1:3]
 
 names(true_vals) <- vars
 
 # trace plot + true value 수평 점선
 p <- mcmc_trace(draws, pars = vars) +
   geom_hline(
-    data = data.frame(parameter = vars, lmu_mean_true = true_vals),
-    aes(yintercept = lmu_mean_true),
+    data = data.frame(parameter = vars, phi_true = true_vals),
+    aes(yintercept = eta_true),
     linetype = "dashed",
     linewidth = 0.4,
     inherit.aes = FALSE
