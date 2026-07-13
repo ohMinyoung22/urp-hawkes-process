@@ -317,11 +317,12 @@ model {
   // Priors
   // ===========================================================================
   
-  // Informative
-  lmu_mean ~ normal(-2.3, 0.5);
-  sigma_mu ~ normal(0, 0.3);
-  leta ~ normal(log(3.5), 0.35);
-  lphi ~ normal(log(3.5), 0.35);
+  // Weak informative
+  lmu_mean ~ normal(-2.3, 1.0);
+  sigma_mu ~ normal(0, 0.6);
+  
+  leta ~ normal(log(3.5), 0.7);
+  lphi ~ normal(log(3.5), 0.7);
   
   to_vector(z_mu) ~ std_normal();
   to_vector(a_star) ~ normal(0, a_sd);
@@ -369,7 +370,7 @@ t_num = sim_dat1$time
 m = sim_dat1$mark
 K = 3
 
-alpha_true <- matrix(
+a_star_true <- matrix(
   c(
     0.57, 0.00, -0.26,
     0.00, 0.55, 0.26,
@@ -394,7 +395,8 @@ phi_true <- c(2, 5, 3)
 ell_mu_true <- 30
 sigma_mu_true <- c(0.30, 0.30, 0.30)
 mean_mu_true <- c(0.2, 0.1, 0.1)
-lmu_mean_true
+lmu_mean_true <-
+  log(mean_mu_true) - sigma_mu_true^2 / 2
 
 T_end = 1000
 t_num <- as.numeric(t_num)
@@ -539,11 +541,14 @@ saveRDS(fit, "fit_normalGP.RDS")
 fit$cmdstan_diagnose()
 
 ### summary
-summary <- fit_6000$summary(
-  posterior::default_summary_measures(),
-  posterior::default_convergence_measures(),
-  q2.5 = ~quantile(.x, 0.025),
-  q97.5 = ~quantile(.x, 0.975)
+library(posterior)
+detach("package:posterior", unload = TRUE) # 혹시 모를 충돌 방지를 위해 언로드
+library(posterior)
+
+summary <- fit$summary(
+  NULL, # 모든 변수 선택
+  q2.5 = ~stats::quantile(.x, 0.025),
+  q97.5 = ~stats::quantile(.x, 0.975)
 )
                             
 summary %>% filter(str_detect(variable, "a_star"))
@@ -568,14 +573,14 @@ vars <- as.vector(outer(
 draws <- fit$draws(variables = vars)
 
 # alpha_true가 3x3 matrix라고 가정
-true_vals <- as.vector(alpha_true[1:3])
+true_vals <- as.vector(a_star_true[1:3, 1:3])
 names(true_vals) <- vars
 
 # trace plot + true value 수평 점선
 p <- mcmc_trace(draws, pars = vars) +
   geom_hline(
-    data = data.frame(parameter = vars, alpha_true = true_vals),
-    aes(yintercept = alpha_true),
+    data = data.frame(parameter = vars, a_star_true = true_vals),
+    aes(yintercept = a_star_true),
     linetype = "dashed",
     linewidth = 0.4,
     inherit.aes = FALSE
@@ -584,21 +589,21 @@ p <- mcmc_trace(draws, pars = vars) +
 p
 
 # eta[1], eta[2], eta[3] 이름 만들기
-vars <- sprintf("lmu_mean[%d]", 1:3)
+vars <- sprintf("sigma_mu[%d]", 1:3)
 
 # draws 추출
 draws <- fit$draws(variables = vars)
 
 # eta_true가 길이 3 벡터라고 가정
-true_vals <- lmu_mean_true[1:3]
+true_vals <- sigma_mu_true[1:3]
 
 names(true_vals) <- vars
 
 # trace plot + true value 수평 점선
 p <- mcmc_trace(draws, pars = vars) +
   geom_hline(
-    data = data.frame(parameter = vars, lmu_mean_true = true_vals),
-    aes(yintercept = lmu_mean_true),
+    data = data.frame(parameter = vars, sigma_mu_true = true_vals),
+    aes(yintercept = sigma_mu_true),
     linetype = "dashed",
     linewidth = 0.4,
     inherit.aes = FALSE
@@ -617,7 +622,7 @@ lmu_mean_true <-
 
 true_values <- c(
   setNames(
-    as.vector(t(alpha_true)),
+    as.vector(t(a_star_true)),
     paste0(
       "a_star[",
       rep(1:3, each = 3),

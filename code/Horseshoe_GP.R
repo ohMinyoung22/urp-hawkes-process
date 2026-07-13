@@ -353,11 +353,12 @@ model {
   // Priors
   // ===========================================================================
   
-  // Informative
-  lmu_mean ~ normal(-2.3, 0.5);
-  sigma_mu ~ normal(0, 0.3);
-  leta ~ normal(log(3.5), 0.35);
-  lphi ~ normal(log(3.5), 0.35);
+  // Weak informative
+  lmu_mean ~ normal(-2.3, 1.0);
+  sigma_mu ~ normal(0, 0.6);
+  
+  leta ~ normal(log(3.5), 0.7);
+  lphi ~ normal(log(3.5), 0.7);
   
   to_vector(z_mu) ~ std_normal();
   //to_vector(a_star) ~ normal(0, a_sd);
@@ -405,7 +406,7 @@ t_num = sim_dat1$time
 m = sim_dat1$mark
 K = 3
 
-alpha_true <- matrix(
+a_star_true <- matrix(
   c(
     0.57, 0.00, -0.26,
     0.00, 0.55, 0.26,
@@ -563,7 +564,7 @@ is.unsorted(s_mu)
 
 setwd("C:/Users/nexen/Desktop/Hawkes_Process/urp-hawkes-process")
 ## fit the model ---- 
-fit <- MHPWI_model$sample(
+fit_horse <- MHPWI_model$sample(
   data = stan_data,
   chains = 4,
   parallel_chains = 4,
@@ -576,7 +577,7 @@ fit <- MHPWI_model$sample(
 )
 
 ### Sampler diagnostic
-fit$diagnostic_summary()
+fit_uninform$diagnostic_summary()
 
 saveRDS(fit, "fit_normalGP.RDS")
 fit$cmdstan_diagnose()
@@ -596,7 +597,7 @@ vars <- as.vector(outer(
 ))
 
 # draws 추출
-draws <- fit$draws(variables = vars)
+draws <- fit_uninform$draws(variables = vars)
 
 # alpha_true가 3x3 matrix라고 가정
 true_vals <- as.vector(alpha_true[1:3, 1:3])
@@ -612,13 +613,13 @@ p <- mcmc_trace(draws, pars = vars) +
     inherit.aes = FALSE
   )
 
-
+p
 
 # eta[1], eta[2], eta[3] 이름 만들기
 vars <- sprintf("phi[%d]", 1:3)
 
 # draws 추출
-draws <- fit$draws(variables = vars)
+draws <- fit_uninform$draws(variables = vars)
 
 # eta_true가 길이 3 벡터라고 가정
 true_vals <- phi_true[1:3]
@@ -629,7 +630,7 @@ names(true_vals) <- vars
 p <- mcmc_trace(draws, pars = vars) +
   geom_hline(
     data = data.frame(parameter = vars, phi_true = true_vals),
-    aes(yintercept = eta_true),
+    aes(yintercept = phi_true),
     linetype = "dashed",
     linewidth = 0.4,
     inherit.aes = FALSE
@@ -682,7 +683,7 @@ library(posterior)
 library(dplyr)
 library(tidyr)
 
-draws_df <- fit$draws(
+draws_df <- fit_uninform$draws(
   variables = names(true_values),
   format = "draws_df"
 )
