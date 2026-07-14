@@ -317,7 +317,7 @@ model {
   // Priors
   // ===========================================================================
   
-  // Weak informative
+  // lmu_mean misspecification
   lmu_mean ~ normal(-3, 0.5);
   sigma_mu ~ normal(0, 0.3);
   
@@ -535,4 +535,60 @@ fit_lmumean_normal <- MHPWI_model$sample(
 )
 
 ### Sampler diagnostic
-fit$diagnostic_summary()
+fit_lmumean_normal$diagnostic_summary()
+
+
+vars <- as.vector(outer(
+  1:3, 1:3,
+  Vectorize(function(i, j) sprintf("a_star[%d,%d]", i, j))
+))
+
+# draws 추출
+draws <- fit_lmumean_normal$draws(variables = vars)
+
+# alpha_true가 3x3 matrix라고 가정
+true_vals <- as.vector(a_star_true[1:3, 1:3])
+names(true_vals) <- vars
+
+# trace plot + true value 수평 점선
+p <- mcmc_trace(draws, pars = vars) +
+  geom_hline(
+    data = data.frame(parameter = vars, a_star_true = true_vals),
+    aes(yintercept = a_star_true),
+    linetype = "dashed",
+    linewidth = 0.4,
+    inherit.aes = FALSE
+  )
+
+plot_trace_with_true <- function(fit, vars, true_vals) {
+  if (length(vars) != length(true_vals)) {
+    stop("vars와 true_vals의 길이가 같아야 합니다.")
+  }
+  
+  draws <- fit$draws(
+    variables = vars
+  )
+  
+  true_df <- data.frame(
+    parameter = vars,
+    true_value = as.numeric(true_vals)
+  )
+  
+  mcmc_trace(draws) +
+    geom_hline(
+      data = true_df,
+      aes(yintercept = true_value),
+      linetype = "dashed",
+      linewidth = 0.4,
+      inherit.aes = FALSE
+    )
+}
+
+vars <- sprintf("phi[%d]", 1:3)
+true_vals <- phi_true[1:3]
+
+plot_trace_with_true(
+  fit       = fit_lmumean_normal,
+  vars      = vars,
+  true_vals = true_vals
+)

@@ -3,19 +3,21 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 
-plot_trace_with_true <- function(fit, vars, true_vals){
-  if(length(vars) != length(true_vals)){
+plot_trace_with_true <- function(fit, vars, true_vals) {
+  if (length(vars) != length(true_vals)) {
     stop("vars와 true_vals의 길이가 같아야 합니다.")
   }
   
-  draw <- fit$draws(variables = vars)
+  draws <- fit$draws(
+    variables = vars
+  )
   
   true_df <- data.frame(
     parameter = vars,
     true_value = as.numeric(true_vals)
   )
   
-  mcmc_trace(draws, pars = vars) +
+  mcmc_trace(draws) +
     geom_hline(
       data = true_df,
       aes(yintercept = true_value),
@@ -24,6 +26,7 @@ plot_trace_with_true <- function(fit, vars, true_vals){
       inherit.aes = FALSE
     )
 }
+
 
 summarise_posterior_with_truth <- function(
     fit,

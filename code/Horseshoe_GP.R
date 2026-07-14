@@ -353,12 +353,12 @@ model {
   // Priors
   // ===========================================================================
   
-  // Weak informative
-  lmu_mean ~ normal(-2.3, 1.0);
-  sigma_mu ~ normal(0, 0.6);
+  // lmu_mean misspecification
+  lmu_mean ~ normal(-3, 0.5);
+  sigma_mu ~ normal(0, 0.3);
   
-  leta ~ normal(log(3.5), 0.7);
-  lphi ~ normal(log(3.5), 0.7);
+  leta ~ normal(log(3.5), 0.35);
+  lphi ~ normal(log(3.5), 0.35);
   
   to_vector(z_mu) ~ std_normal();
   //to_vector(a_star) ~ normal(0, a_sd);
@@ -564,7 +564,7 @@ is.unsorted(s_mu)
 
 setwd("C:/Users/nexen/Desktop/Hawkes_Process/urp-hawkes-process")
 ## fit the model ---- 
-fit_horse <- MHPWI_model$sample(
+fit_horse_mis <- MHPWI_model$sample(
   data = stan_data,
   chains = 4,
   parallel_chains = 4,
@@ -577,7 +577,7 @@ fit_horse <- MHPWI_model$sample(
 )
 
 ### Sampler diagnostic
-fit_uninform$diagnostic_summary()
+fit_horse_mis$diagnostic_summary()
 
 saveRDS(fit, "fit_normalGP.RDS")
 fit$cmdstan_diagnose()
@@ -597,7 +597,7 @@ vars <- as.vector(outer(
 ))
 
 # draws 추출
-draws <- fit_horse$draws(variables = vars)
+draws <- fit_horse_mis$draws(variables = vars)
 
 # alpha_true가 3x3 matrix라고 가정
 true_vals <- as.vector(a_star_true[1:3, 1:3])
@@ -619,7 +619,7 @@ p
 vars <- sprintf("lmu_mean[%d]", 1:3)
 
 # draws 추출
-draws <- fit_horse$draws(variables = vars)
+draws <- fit_horse_mis$draws(variables = vars)
 
 # eta_true가 길이 3 벡터라고 가정
 true_vals <- lmu_mean_true[1:3]
@@ -683,7 +683,7 @@ library(posterior)
 library(dplyr)
 library(tidyr)
 
-draws_df <- fit_horse$draws(
+draws_df <- fit_horse_mis$draws(
   variables = names(true_values),
   format = "draws_df"
 )
