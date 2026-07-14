@@ -597,17 +597,17 @@ vars <- as.vector(outer(
 ))
 
 # draws 추출
-draws <- fit_uninform$draws(variables = vars)
+draws <- fit_horse$draws(variables = vars)
 
 # alpha_true가 3x3 matrix라고 가정
-true_vals <- as.vector(alpha_true[1:3, 1:3])
+true_vals <- as.vector(a_star_true[1:3, 1:3])
 names(true_vals) <- vars
 
 # trace plot + true value 수평 점선
 p <- mcmc_trace(draws, pars = vars) +
   geom_hline(
-    data = data.frame(parameter = vars, alpha_true = true_vals),
-    aes(yintercept = alpha_true),
+    data = data.frame(parameter = vars, a_star_true = true_vals),
+    aes(yintercept = a_star_true),
     linetype = "dashed",
     linewidth = 0.4,
     inherit.aes = FALSE
@@ -616,21 +616,21 @@ p <- mcmc_trace(draws, pars = vars) +
 p
 
 # eta[1], eta[2], eta[3] 이름 만들기
-vars <- sprintf("phi[%d]", 1:3)
+vars <- sprintf("lmu_mean[%d]", 1:3)
 
 # draws 추출
-draws <- fit_uninform$draws(variables = vars)
+draws <- fit_horse$draws(variables = vars)
 
 # eta_true가 길이 3 벡터라고 가정
-true_vals <- phi_true[1:3]
+true_vals <- lmu_mean_true[1:3]
 
 names(true_vals) <- vars
 
 # trace plot + true value 수평 점선
 p <- mcmc_trace(draws, pars = vars) +
   geom_hline(
-    data = data.frame(parameter = vars, phi_true = true_vals),
-    aes(yintercept = phi_true),
+    data = data.frame(parameter = vars, lmu_mean_true = true_vals),
+    aes(yintercept = lmu_mean_true),
     linetype = "dashed",
     linewidth = 0.4,
     inherit.aes = FALSE
@@ -649,7 +649,7 @@ lmu_mean_true <-
 
 true_values <- c(
   setNames(
-    as.vector(t(alpha_true)),
+    as.vector(t(a_star_true)),
     paste0(
       "a_star[",
       rep(1:3, each = 3),
@@ -683,7 +683,7 @@ library(posterior)
 library(dplyr)
 library(tidyr)
 
-draws_df <- fit_uninform$draws(
+draws_df <- fit_horse$draws(
   variables = names(true_values),
   format = "draws_df"
 )

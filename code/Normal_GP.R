@@ -318,11 +318,11 @@ model {
   // ===========================================================================
   
   // Weak informative
-  lmu_mean ~ normal(-2.3, 1.0);
-  sigma_mu ~ normal(0, 0.6);
+  lmu_mean ~ normal(-3, 0.5);
+  sigma_mu ~ normal(0, 0.3);
   
-  leta ~ normal(log(3.5), 0.7);
-  lphi ~ normal(log(3.5), 0.7);
+  leta ~ normal(log(3.5), 0.35);
+  lphi ~ normal(log(3.5), 0.35);
   
   to_vector(z_mu) ~ std_normal();
   to_vector(a_star) ~ normal(0, a_sd);
@@ -522,7 +522,7 @@ is.unsorted(s_mu)
 
 setwd("C:/Users/nexen/Desktop/Hawkes_Process/urp-hawkes-process")
 ## fit the model ---- 
-fit <- MHPWI_model$sample(
+fit_lmumean_normal <- MHPWI_model$sample(
   data = stan_data,
   chains = 4,
   parallel_chains = 4,
@@ -536,166 +536,3 @@ fit <- MHPWI_model$sample(
 
 ### Sampler diagnostic
 fit$diagnostic_summary()
-
-saveRDS(fit, "fit_normalGP.RDS")
-fit$cmdstan_diagnose()
-
-### summary
-library(posterior)
-detach("package:posterior", unload = TRUE) # 혹시 모를 충돌 방지를 위해 언로드
-library(posterior)
-
-summary <- fit$summary(
-  NULL, # 모든 변수 선택
-  q2.5 = ~stats::quantile(.x, 0.025),
-  q97.5 = ~stats::quantile(.x, 0.975)
-)
-                            
-summary %>% filter(str_detect(variable, "a_star"))
-summary %>% filter(str_detect(variable, "eta"))
-summary %>% filter(str_detect(variable, "phi"))
-summary %>% filter(str_detect(variable, "lmu_mean"))
-summary %>% filter(str_detect(variable, "sigma_mu"))
-
-### trace plot
-library(cmdstanr)
-library(posterior)
-library(bayesplot)
-library(ggplot2)
-
-# 1 <= i, j <= 3인 a_star[i,j] 이름 만들기
-vars <- as.vector(outer(
-  1:3, 1:3,
-  Vectorize(function(i, j) sprintf("a_star[%d,%d]", i, j))
-))
-
-# draws 추출
-draws <- fit$draws(variables = vars)
-
-# alpha_true가 3x3 matrix라고 가정
-true_vals <- as.vector(a_star_true[1:3, 1:3])
-names(true_vals) <- vars
-
-# trace plot + true value 수평 점선
-p <- mcmc_trace(draws, pars = vars) +
-  geom_hline(
-    data = data.frame(parameter = vars, a_star_true = true_vals),
-    aes(yintercept = a_star_true),
-    linetype = "dashed",
-    linewidth = 0.4,
-    inherit.aes = FALSE
-  )
-
-p
-
-# eta[1], eta[2], eta[3] 이름 만들기
-vars <- sprintf("sigma_mu[%d]", 1:3)
-
-# draws 추출
-draws <- fit$draws(variables = vars)
-
-# eta_true가 길이 3 벡터라고 가정
-true_vals <- sigma_mu_true[1:3]
-
-names(true_vals) <- vars
-
-# trace plot + true value 수평 점선
-p <- mcmc_trace(draws, pars = vars) +
-  geom_hline(
-    data = data.frame(parameter = vars, sigma_mu_true = true_vals),
-    aes(yintercept = sigma_mu_true),
-    linetype = "dashed",
-    linewidth = 0.4,
-    inherit.aes = FALSE
-  )
-
-p
-
-
-### coverage plot
-library(posterior)
-library(dplyr)
-library(tibble)
-
-lmu_mean_true <-
-  log(mean_mu_true) - sigma_mu_true^2 / 2
-
-true_values <- c(
-  setNames(
-    as.vector(t(a_star_true)),
-    paste0(
-      "a_star[",
-      rep(1:3, each = 3),
-      ",",
-      rep(1:3, 3),
-      "]"
-    )
-  ),
-  setNames(
-    sigma_mu_true,
-    paste0("sigma_mu[", 1:3, "]")
-  ),
-  
-  setNames(
-    eta_true,
-    paste0("eta[", 1:3, "]")
-  ),
-  
-  setNames(
-    phi_true,
-    paste0("phi[", 1:3, "]")
-  ),
-  
-  setNames(
-    lmu_mean_true,
-    paste0("lmu_mean[", 1:3, "]")
-  )
-)
-
-library(posterior)
-library(dplyr)
-library(tidyr)
-
-draws_df <- fit$draws(
-  variables = names(true_values),
-  format = "draws_df"
-)
-
-result <- draws_df %>%
-  as.data.frame() %>%
-  select(all_of(names(true_values))) %>%
-  pivot_longer(
-    cols = everything(),
-    names_to = "Parameter",
-    values_to = "draw"
-  ) %>%
-  group_by(Parameter) %>%
-  summarise(
-    `Mean estimate` = mean(draw),
-    ci_lower = quantile(draw, 0.025),
-    ci_upper = quantile(draw, 0.975),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    `True value` = true_values[Parameter],
-    `credible interval` = paste0(
-      "[",
-      round(ci_lower, 4),
-      ", ",
-      round(ci_upper, 4),
-      "]"
-    ),
-    coverage = (
-      `True value` >= ci_lower &
-        `True value` <= ci_upper
-    )
-  ) %>%
-  select(
-    Parameter,
-    `True value`,
-    `Mean estimate`,
-    `credible interval`,
-    coverage
-  )
-
-print(result, n = Inf)
