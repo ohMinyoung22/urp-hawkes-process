@@ -257,9 +257,17 @@ parameters {
   vector<lower=0>[K] sigma_mu;
   matrix[K, size_s_mu] z_mu;
 
-  // a_star > 0  -> excitation
-  // a_star < 0  -> inhibition
-  matrix<lower=-1, upper=1>[K, K] a_star;
+  real<lower=-1, upper=1> a_star_11;
+  real<lower=-1, upper=1> a_star_12;
+  real<lower=-1, upper=1> a_star_13;
+
+  real<lower=-1, upper=1> a_star_21;
+  real<lower=0,  upper=1> a_star_22;  // excitation only
+  real<lower=-1, upper=1> a_star_23;
+
+  real<lower=-1, upper=1> a_star_31;
+  real<lower=-1, upper=1> a_star_32;
+  real<lower=-1, upper=1> a_star_33;
 
   vector[K] leta;
   vector[K] lphi;
@@ -305,12 +313,37 @@ model {
   // alpha[l,k] = max(a_star[l,k], 0)
   // gamma[l,k] = max(-a_star[l,k], 0)
   // ===========================================================================
-  for (l in 1:K) {
-    for (k in 1:K) {
-      alpha[l, k] = a_star[l, k] > 0 ? a_star[l, k] : 0;
-      gamma[l, k] = a_star[l, k] < 0 ? -a_star[l, k] : 0;
-    }
-  }
+  
+// Row 1
+alpha[1,1] = fmax(a_star_11, 0);
+gamma[1,1] = fmax(-a_star_11, 0);
+
+alpha[1,2] = fmax(a_star_12, 0);
+gamma[1,2] = fmax(-a_star_12, 0);
+
+alpha[1,3] = fmax(a_star_13, 0);
+gamma[1,3] = fmax(-a_star_13, 0);
+
+// Row 2
+alpha[2,1] = fmax(a_star_21, 0);
+gamma[2,1] = fmax(-a_star_21, 0);
+
+// excitation만 추정
+alpha[2,2] = a_star_22;
+gamma[2,2] = 0;
+
+alpha[2,3] = fmax(a_star_23, 0);
+gamma[2,3] = fmax(-a_star_23, 0);
+
+// Row 3
+alpha[3,1] = fmax(a_star_31, 0);
+gamma[3,1] = fmax(-a_star_31, 0);
+
+alpha[3,2] = fmax(a_star_32, 0);
+gamma[3,2] = fmax(-a_star_32, 0);
+
+alpha[3,3] = fmax(a_star_33, 0);
+gamma[3,3] = fmax(-a_star_33, 0);
 
 
   // ===========================================================================
@@ -318,14 +351,24 @@ model {
   // ===========================================================================
   
   // lmu_mean misspecification
-  lmu_mean ~ normal(-3, 0.5);
-  sigma_mu ~ normal(0, 0.3);
+  lmu_mean ~ normal(0, 1);
+  sigma_mu ~ gamma(2, 2);
   
-  leta ~ normal(log(3.5), 0.35);
-  lphi ~ normal(log(3.5), 0.35);
+  leta ~ normal(0, 1);
+  lphi ~ normal(0, 1);
   
   to_vector(z_mu) ~ std_normal();
-  to_vector(a_star) ~ normal(0, a_sd);
+  a_star_11 ~ normal(0, a_sd);
+a_star_12 ~ normal(0, a_sd);
+a_star_13 ~ normal(0, a_sd);
+
+a_star_21 ~ normal(0, a_sd);
+a_star_22 ~ normal(0, a_sd);
+a_star_23 ~ normal(0, a_sd);
+
+a_star_31 ~ normal(0, a_sd);
+a_star_32 ~ normal(0, a_sd);
+a_star_33 ~ normal(0, a_sd);
 
   // ===========================================================================
   // Likelihood
@@ -338,6 +381,7 @@ model {
 }
 
 generated quantities {
+  matrix[K, K] a_star;
   matrix<lower=0, upper=1>[K, K] alpha;
   matrix<lower=0, upper=1>[K, K] gamma;
   matrix[K, K] signed_effect;
@@ -345,15 +389,27 @@ generated quantities {
   matrix<lower=0, upper=1>[K, K] is_excitation;
   matrix<lower=0, upper=1>[K, K] is_inhibition;
 
+  a_star[1,1] = a_star_11;
+  a_star[1,2] = a_star_12;
+  a_star[1,3] = a_star_13;
+
+  a_star[2,1] = a_star_21;
+  a_star[2,2] = a_star_22;
+  a_star[2,3] = a_star_23;
+
+  a_star[3,1] = a_star_31;
+  a_star[3,2] = a_star_32;
+  a_star[3,3] = a_star_33;
+
   for (l in 1:K) {
     for (k in 1:K) {
-      alpha[l, k] = a_star[l, k] > 0 ? a_star[l, k] : 0;
-      gamma[l, k] = a_star[l, k] < 0 ? -a_star[l, k] : 0;
+      alpha[l,k] = fmax(a_star[l,k], 0);
+      gamma[l,k] = fmax(-a_star[l,k], 0);
 
-      signed_effect[l, k] = alpha[l, k] - gamma[l, k];
+      signed_effect[l,k] = alpha[l,k] - gamma[l,k];
 
-      is_excitation[l, k] = a_star[l, k] > 0 ? 1 : 0;
-      is_inhibition[l, k] = a_star[l, k] < 0 ? 1 : 0;
+      is_excitation[l,k] = a_star[l,k] > 0;
+      is_inhibition[l,k] = a_star[l,k] < 0;
     }
   }
 }
@@ -522,73 +578,175 @@ is.unsorted(s_mu)
 
 setwd("C:/Users/nexen/Desktop/Hawkes_Process/urp-hawkes-process")
 ## fit the model ---- 
-fit_lmumean_normal <- MHPWI_model$sample(
+fit_sigmamu_normal_excitation22_10000 <- MHPWI_model$sample(
   data = stan_data,
   chains = 4,
   parallel_chains = 4,
-  iter_warmup = 2000,
+  iter_warmup = 8000,
   iter_sampling = 2000,
-  adapt_delta = 0.95,
+  adapt_delta = 0.90,
   seed = 123,
   refresh = 10,
   output_dir = "artifact"
 )
 
 ### Sampler diagnostic
-fit_lmumean_normal$diagnostic_summary()
+fit_sigmamu_normal_excitation22_10000$diagnostic_summary()
 
-
-vars <- as.vector(outer(
-  1:3, 1:3,
-  Vectorize(function(i, j) sprintf("a_star[%d,%d]", i, j))
-))
-
-# draws 추출
-draws <- fit_lmumean_normal$draws(variables = vars)
-
-# alpha_true가 3x3 matrix라고 가정
-true_vals <- as.vector(a_star_true[1:3, 1:3])
-names(true_vals) <- vars
-
-# trace plot + true value 수평 점선
-p <- mcmc_trace(draws, pars = vars) +
-  geom_hline(
-    data = data.frame(parameter = vars, a_star_true = true_vals),
-    aes(yintercept = a_star_true),
-    linetype = "dashed",
-    linewidth = 0.4,
-    inherit.aes = FALSE
+sum <- fit_sigmamu_normal_excitation22_10000$summary(
+  variables = c(
+    "a_star",
+    "eta",
+    "phi",
+    "sigma_mu",
+    "lmu_mean"
   )
-
-plot_trace_with_true <- function(fit, vars, true_vals) {
-  if (length(vars) != length(true_vals)) {
-    stop("vars와 true_vals의 길이가 같아야 합니다.")
-  }
-  
-  draws <- fit$draws(
-    variables = vars
-  )
-  
-  true_df <- data.frame(
-    parameter = vars,
-    true_value = as.numeric(true_vals)
-  )
-  
-  mcmc_trace(draws) +
-    geom_hline(
-      data = true_df,
-      aes(yintercept = true_value),
-      linetype = "dashed",
-      linewidth = 0.4,
-      inherit.aes = FALSE
-    )
-}
-
-vars <- sprintf("phi[%d]", 1:3)
-true_vals <- phi_true[1:3]
-
-plot_trace_with_true(
-  fit       = fit_lmumean_normal,
-  vars      = vars,
-  true_vals = true_vals
 )
+
+print(sum, n = Inf)
+library(bayesplot)
+
+##############
+util_path = "C:/Users/nexen/Documents/util.R"
+source(util_path)
+
+
+a_star_flatten <- c(t(a_star_true))
+
+a_star_names <- as.vector(t(outer(
+  1:3, 1:3,
+  FUN = function(i,j) paste0("a_star[", i, ",", j, "]")
+)))
+
+install.packages("gt")
+library(gt)
+eta_names <- paste0("eta[", 1:3, "]")
+phi_names <- paste0("phi[", 1:3, "]")
+sigma_mu_names <- paste0("sigma_mu[", 1:3, "]")
+lmu_mean_names <- paste0("lmu_mean[", 1:3, "]")
+vars <- c(a_star_names, eta_names, phi_names, sigma_mu_names, lmu_mean_names)
+
+true_vals <- c(a_star_flatten, eta_true, phi_true, sigma_mu_true, lmu_mean_true)
+
+summary <- draw_summary_table(fit_sigmamu_normal_excitation22_10000, vars, true_vals)
+summary
+
+draw_trace_plot_trueline(fit_sigmamu_normal_excitation22_10000, a_star_names, a_star_flatten)
+library(cmdstanr)
+library(posterior)
+library(bayesplot)
+
+draws_array <- fit_sigmamu_normal$draws(
+  variables = c(
+    "a_star[2,2]",
+    "phi[2]",
+    "sigma_mu[2]",
+    "lmu_mean[2]"
+  ),
+  format = "draws_array"
+)
+
+bayesplot::mcmc_trace(draws_array)
+np <- nuts_params(fit_sigmamu_normal)
+
+library(bayesplot)
+library(posterior)
+
+draws_array <- fit_sigmamu_normal$draws(
+  variables = c(
+    "a_star[2,2]",
+    "phi[2]",
+    "sigma_mu[2]",
+    "lmu_mean[2]"
+  ),
+  format = "draws_array"
+)
+
+np <- bayesplot::nuts_params(fit_sigmamu_normal)
+
+bayesplot::mcmc_pairs(
+  draws_array,
+  pars = c(
+    "a_star[2,2]",
+    "phi[2]",
+    "sigma_mu[2]",
+    "lmu_mean[2]"
+  ),
+  np = np,
+  max_treedepth = 10,
+  np_style = bayesplot::pairs_style_np(
+    div_color = "red",
+    div_shape = 16,
+    div_size = 1.5,
+    div_alpha = 0.8,
+    td_color = "yellow2",
+    td_shape = 3,
+    td_size = 1.5,
+    td_alpha = 0.8
+  )
+)
+library(posterior)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# 관심 변수 추출
+draws_df <- fit_sigmamu_normal$draws(
+  variables = c(
+    "a_star[2,2]",
+    "phi[2]",
+    "sigma_mu[2]",
+    "lmu_mean[2]"
+  ),
+  format = "draws_df"
+) |>
+  as.data.frame()
+
+# 부호 그룹 생성
+draws_long <- draws_df |>
+  mutate(
+    sign_group = if_else(
+      `a_star[2,2]` > 0,
+      "a_star[2,2] > 0",
+      "a_star[2,2] < 0"
+    )
+  ) |>
+  pivot_longer(
+    cols = c(
+      `phi[2]`,
+      `sigma_mu[2]`,
+      `lmu_mean[2]`
+    ),
+    names_to = "parameter",
+    values_to = "value"
+  )
+
+ggplot(
+  draws_long,
+  aes(
+    x = value,
+    fill = sign_group,
+    color = sign_group
+  )
+) +
+  geom_density(
+    alpha = 0.25,
+    linewidth = 0.8,
+    adjust = 1
+  ) +
+  facet_wrap(
+    ~ parameter,
+    scales = "free",
+    ncol = 1
+  ) +
+  labs(
+    x = NULL,
+    y = "Density",
+    fill = NULL,
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "top",
+    strip.background = element_blank()
+  )
